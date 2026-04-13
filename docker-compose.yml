@@ -1,0 +1,104 @@
+version: '3.9'
+
+services:
+  # ─── API ────────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: menu-digital-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - menu-net
+    volumes:
+      - ./prisma:/app/prisma:ro
+    command: >
+      sh -c "npx prisma migrate deploy && node dist/main"
+
+  # ─── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: menu-digital-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-menuadmin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-supersecretpassword}
+      POSTGRES_DB: ${DB_NAME:-menu_digital}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - menu-net
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-menuadmin} -d ${DB_NAME:-menu_digital}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: menu-digital-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redissecret} --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - menu-net
+    healthcheck:
+      test: ['CMD', 'redis-cli', '--no-auth-warning', '-a', '${REDIS_PASSWORD:-redissecret}', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── MinIO (S3-compatible, local dev only) ────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: menu-digital-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin123}
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'  # S3 API
+      - '9001:9001'  # Web console
+    volumes:
+      - minio_data:/data
+    networks:
+      - menu-net
+    profiles:
+      - dev
+
+  # ─── Adminer (DB UI, local dev only) ──────────────────────────────────────
+  adminer:
+    image: adminer:latest
+    container_name: menu-digital-adminer
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    networks:
+      - menu-net
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  menu-net:
+    driver: bridge

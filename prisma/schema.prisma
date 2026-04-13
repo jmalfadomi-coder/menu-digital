@@ -1,0 +1,426 @@
+// ============================================================
+// Prisma Schema – Menu Digital SaaS (Multi-tenant)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  RESTAURANT_OWNER
+  RESTAURANT_MANAGER
+  CONTENT_EDITOR
+}
+
+enum TenantRole {
+  RESTAURANT_OWNER
+  RESTAURANT_MANAGER
+  CONTENT_EDITOR
+}
+
+enum Locale {
+  EN
+  ES
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum ItemStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PASSWORD_RESET
+  PUBLISH
+  UNPUBLISH
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tenant (Restaurant Profile)
+// ─────────────────────────────────────────────────────────────
+
+model Tenant {
+  id   String @id @default(cuid())
+  slug String @unique
+
+  // Basic info
+  name_en String
+  name_es String?
+
+  // Contact
+  email   String?
+  phone   String?
+  website String?
+  address String?
+  city    String?
+  state   String?
+  country String?
+  zipCode String?
+
+  // Branding
+  logoUrl       String?
+  faviconUrl    String?
+  bannerUrl     String?
+  primaryColor  String?   @default("#FF6B35")
+  accentColor   String?   @default("#2C3E50")
+  backgroundColor String? @default("#FFFFFF")
+  fontFamily    String?   @default("Inter")
+
+  // Hero section
+  heroMediaUrl    String?
+  heroMediaType   MediaType?
+  heroTitle_en    String?
+  heroTitle_es    String?
+  heroSubtitle_en String?
+  heroSubtitle_es String?
+
+  // Theme / advanced settings (JSON blob for flexibility)
+  themeSettings Json?
+
+  // SEO / meta
+  metaTitle_en       String?
+  metaDescription_en String?
+  metaTitle_es       String?
+  metaDescription_es String?
+
+  // Locale
+  defaultLocale    Locale    @default(EN)
+  supportedLocales Locale[]  @default([EN])
+
+  // Subscription
+  plan      Plan    @default(FREE)
+  isActive  Boolean @default(true)
+  isVerified Boolean @default(false)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userTenants     UserTenant[]
+  menus           Menu[]
+  auditLogs       AuditLog[]
+  analyticsEvents AnalyticsEvent[]
+  mediaAssets     MediaAsset[]
+
+  @@index([slug])
+  @@index([isActive])
+}
+
+// ─────────────────────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id        String @id @default(cuid())
+  email     String @unique
+  password  String
+
+  firstName String
+  lastName  String
+  avatarUrl String?
+
+  // System-level role (SUPER_ADMIN / AGENCY_ADMIN live here; tenant-specific roles in UserTenant)
+  role     Role    @default(CONTENT_EDITOR)
+  isActive Boolean @default(true)
+
+  // Auth tokens
+  refreshTokenHash     String?
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+
+  // Metadata
+  lastLoginAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userTenants UserTenant[]
+  auditLogs   AuditLog[]
+
+  @@index([email])
+}
+
+// ─────────────────────────────────────────────────────────────
+// UserTenant (many-to-many with role per tenant)
+// ─────────────────────────────────────────────────────────────
+
+model UserTenant {
+  id       String     @id @default(cuid())
+  userId   String
+  tenantId String
+  role     TenantRole @default(CONTENT_EDITOR)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Menu
+// ─────────────────────────────────────────────────────────────
+
+model Menu {
+  id       String @id @default(cuid())
+  tenantId String
+
+  name_en        String
+  name_es        String?
+  description_en String?
+  description_es String?
+
+  isActive  Boolean   @default(true)
+  sortOrder Int       @default(0)
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categories Category[]
+  schedules  MenuSchedule[]
+
+  @@index([tenantId, isActive])
+  @@index([tenantId, sortOrder])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Category
+// ─────────────────────────────────────────────────────────────
+
+model Category {
+  id       String @id @default(cuid())
+  menuId   String
+  tenantId String
+
+  name_en        String
+  name_es        String?
+  description_en String?
+  description_es String?
+  imageUrl       String?
+
+  isActive  Boolean   @default(true)
+  sortOrder Int       @default(0)
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menu  Menu   @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  items Item[]
+
+  @@index([menuId, isActive])
+  @@index([tenantId, sortOrder])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Item
+// ─────────────────────────────────────────────────────────────
+
+model Item {
+  id         String @id @default(cuid())
+  categoryId String
+  tenantId   String
+
+  name_en        String
+  name_es        String?
+  description_en String?
+  description_es String?
+
+  price    Decimal @db.Decimal(10, 2)
+  currency String  @default("USD")
+
+  imageUrl String?
+  videoUrl String?
+
+  allergens  String[] @default([])
+  badges     String[] @default([])
+
+  isFeatured Boolean @default(false)
+  spicyLevel Int?    // 0 = none, 1-5 = mild to very hot
+  isSoldOut  Boolean @default(false)
+
+  sortOrder   Int        @default(0)
+  status      ItemStatus @default(DRAFT)
+  publishedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category  Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  schedules ItemSchedule[]
+
+  @@index([categoryId, status])
+  @@index([tenantId, status])
+  @@index([tenantId, isFeatured])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Scheduling
+// ─────────────────────────────────────────────────────────────
+
+model MenuSchedule {
+  id     String @id @default(cuid())
+  menuId String
+
+  // Recurring weekly schedule (null = every day)
+  dayOfWeek Int? // 0=Sunday … 6=Saturday
+
+  // Time window within the day (HH:MM 24h)
+  startTime String?
+  endTime   String?
+
+  // Optional date range override
+  startDate DateTime?
+  endDate   DateTime?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@index([menuId, isActive])
+}
+
+model ItemSchedule {
+  id     String @id @default(cuid())
+  itemId String
+
+  dayOfWeek Int?
+  startTime String?
+  endTime   String?
+  startDate DateTime?
+  endDate   DateTime?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, isActive])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Media Asset
+// ─────────────────────────────────────────────────────────────
+
+model MediaAsset {
+  id       String @id @default(cuid())
+  tenantId String
+
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  storageKey   String @unique
+
+  mediaType MediaType
+  width     Int?
+  height    Int?
+  duration  Int? // seconds (video)
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([storageKey])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Audit Log
+// ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id       String @id @default(cuid())
+  tenantId String?
+  userId   String
+
+  action       AuditAction
+  resource     String
+  resourceId   String?
+  resourceName String?
+
+  oldData Json?
+  newData Json?
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Analytics Event
+// ─────────────────────────────────────────────────────────────
+
+model AnalyticsEvent {
+  id       String @id @default(cuid())
+  tenantId String
+
+  eventType    String // menu_view, item_view, item_click, search, etc.
+  resourceType String? // menu | category | item
+  resourceId   String?
+
+  sessionId String?
+  visitorId String?
+  locale    Locale?
+
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  referrer  String?
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, eventType, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([visitorId])
+}
