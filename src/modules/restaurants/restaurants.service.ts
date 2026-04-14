@@ -2,33 +2,51 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRestaurantDto } from './dto/create-restaurant.dto';
 import { UpdateRestaurantDto } from './dto/update-restaurant.dto';
 import { getPrismaSkipTake, paginate } from '../../common/types/pagination.types';
 import { JwtPayload } from '../../common/decorators/current-user.decorator';
-import { Role } from '@prisma/client';
+import { Role, TenantRole } from '@prisma/client';
+import { uniqueSlug } from '../../common/utils/slug.util';
 
 @Injectable()
 export class RestaurantsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // ─── Create ───────────────────────────────────────────────
+
   async create(dto: CreateRestaurantDto) {
-    return this.prisma.tenant.create({ data: dto });
+    // Auto-generate slug from name if not provided
+    const slug = dto.slug
+      ? await this.assertSlugFree(dto.slug)
+      : await uniqueSlug(dto.name_en, (s) =>
+          this.prisma.tenant.findUnique({ where: { slug: s } }).then(Boolean),
+        );
+
+    return this.prisma.tenant.create({ data: { ...dto, slug } });
   }
 
-  async findAll(page = 1, limit = 20, search?: string) {
+  // ─── List (admin) ─────────────────────────────────────────
+
+  async findAll(
+    page = 1,
+    limit = 20,
+    search?: string,
+    isActive?: boolean,
+  ) {
     const { skip, take } = getPrismaSkipTake(page, limit);
-    const where = search
-      ? {
-          OR: [
-            { name_en: { contains: search, mode: 'insensitive' as const } },
-            { slug: { contains: search, mode: 'insensitive' as const } },
-            { city: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    const where: any = {};
+    if (search) {
+      where.OR = [
+        { name_en: { contains: search, mode: 'insensitive' } },
+        { slug: { contains: search, mode: 'insensitive' } },
+        { city: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    if (isActive !== undefined) where.isActive = isActive;
 
     const [data, total] = await Promise.all([
       this.prisma.tenant.findMany({
@@ -43,6 +61,25 @@ export class RestaurantsService {
 
     return paginate(data, total, page, limit);
   }
+
+  // ─── My restaurants (current user) ───────────────────────
+
+  async findMine(userId: string) {
+    const memberships = await this.prisma.userTenant.findMany({
+      where: { userId },
+      include: {
+        tenant: { select: this.listSelect() },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return memberships.map((m) => ({
+      ...m.tenant,
+      tenantRole: m.role,
+    }));
+  }
+
+  // ─── Single ───────────────────────────────────────────────
 
   async findOne(id: string, user: JwtPayload) {
     const restaurant = await this.prisma.tenant.findUnique({
@@ -67,10 +104,17 @@ export class RestaurantsService {
     return restaurant;
   }
 
+  // ─── Update ───────────────────────────────────────────────
+
   async update(id: string, dto: UpdateRestaurantDto, user: JwtPayload) {
     const restaurant = await this.findOne(id, user);
-    return this.prisma.tenant.update({ where: { id: restaurant.id }, data: dto });
+    return this.prisma.tenant.update({
+      where: { id: restaurant.id },
+      data: dto,
+    });
   }
+
+  // ─── Delete ───────────────────────────────────────────────
 
   async remove(id: string) {
     const exists = await this.prisma.tenant.findUnique({ where: { id } });
@@ -83,18 +127,68 @@ export class RestaurantsService {
     return this.prisma.tenant.update({ where: { id }, data: { isActive } });
   }
 
+  // ─── Staff management ─────────────────────────────────────
+
+  /**
+   * List all users assigned to a specific tenant (for restaurant owners/managers).
+   */
+  async getStaff(tenantId: string, page = 1, limit = 50) {
+    const { skip, take } = getPrismaSkipTake(page, limit);
+
+    const [data, total] = await Promise.all([
+      this.prisma.userTenant.findMany({
+        where: { tenantId },
+        skip,
+        take,
+        orderBy: { createdAt: 'asc' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+              avatarUrl: true,
+              isActive: true,
+              lastLoginAt: true,
+            },
+          },
+        },
+      }),
+      this.prisma.userTenant.count({ where: { tenantId } }),
+    ]);
+
+    return paginate(
+      data.map((ut) => ({ ...ut.user, tenantRole: ut.role })),
+      total,
+      page,
+      limit,
+    );
+  }
+
+  async removeStaff(tenantId: string, userId: string, requestingUserId: string) {
+    if (userId === requestingUserId) {
+      throw new ForbiddenException('You cannot remove yourself from the restaurant');
+    }
+    await this.prisma.userTenant.deleteMany({ where: { tenantId, userId } });
+    return { message: 'Staff member removed' };
+  }
+
   // ─── Helpers ──────────────────────────────────────────────
 
-  private assertAccess(
-    restaurant: any,
-    user: JwtPayload,
-  ) {
+  private assertAccess(restaurant: any, user: JwtPayload) {
     if ([Role.SUPER_ADMIN, Role.AGENCY_ADMIN].includes(user.role as Role)) return;
 
     const membership = restaurant.userTenants?.[0];
     if (!membership) {
       throw new ForbiddenException('You do not have access to this restaurant');
     }
+  }
+
+  private async assertSlugFree(slug: string): Promise<string> {
+    const existing = await this.prisma.tenant.findUnique({ where: { slug } });
+    if (existing) throw new ConflictException(`Slug "${slug}" is already taken`);
+    return slug;
   }
 
   private listSelect() {
@@ -108,8 +202,9 @@ export class RestaurantsService {
       country: true,
       plan: true,
       isActive: true,
+      isVerified: true,
       createdAt: true,
       _count: { select: { menus: true } },
-    };
+    } as const;
   }
 }

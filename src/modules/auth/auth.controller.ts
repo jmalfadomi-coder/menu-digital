@@ -8,9 +8,7 @@ import {
   Request,
   Ip,
   Headers,
-  Version,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import {
   ApiTags,
   ApiOperation,
@@ -20,9 +18,9 @@ import {
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto, LoginResponseDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SkipTenant } from '../../common/decorators/skip-tenant.decorator';
@@ -37,10 +35,10 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login and receive JWT tokens' })
+  @ApiOperation({ summary: 'Login – receive JWT access + refresh tokens' })
   @ApiResponse({ status: 200, type: LoginResponseDto })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  async login(
+  login(
     @Body() dto: LoginDto,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
@@ -49,32 +47,33 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(JwtRefreshGuard)
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refresh access token using refresh token' })
-  @UseGuards(AuthGuard('jwt-refresh'))
-  async refresh(@Request() req: any) {
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Get a new access token using the refresh token' })
+  refresh(@Request() req: any) {
     return this.authService.refreshTokens(req.user.sub, req.user.refreshToken);
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Logout and invalidate refresh token' })
-  async logout(
-    @CurrentUser('sub') userId: string,
+  @ApiOperation({ summary: 'Logout – revoke tokens on all devices' })
+  logout(
+    @CurrentUser() user: any,
     @Ip() ip: string,
     @Headers('user-agent') userAgent: string,
   ) {
-    return this.authService.logout(userId, ip, userAgent);
+    return this.authService.logout(user.sub, user.jti, ip, userAgent);
   }
 
   @Public()
   @UseGuards(ThrottlerGuard)
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request a password reset email' })
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+  @ApiOperation({ summary: 'Request a password reset link (rate-limited)' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
@@ -82,8 +81,8 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reset password using a valid token' })
-  async resetPassword(@Body() dto: ResetPasswordDto) {
+  @ApiOperation({ summary: 'Reset password with a valid token' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto);
   }
 }

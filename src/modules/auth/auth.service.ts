@@ -2,14 +2,15 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
-  NotFoundException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TokenBlacklistService } from './token-blacklist.service';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
+import { v4 as uuid } from 'uuid';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -23,6 +24,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly blacklist: TokenBlacklistService,
   ) {}
 
   // ─── Login ────────────────────────────────────────────────
@@ -59,7 +61,13 @@ export class AuthService {
       tenantRole = ut.role;
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role, tenantId, tenantRole);
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role,
+      tenantId,
+      tenantRole,
+    );
 
     // Store hashed refresh token
     await this.prisma.user.update({
@@ -70,13 +78,12 @@ export class AuthService {
       },
     });
 
-    // Audit
     await this.audit(user.id, tenantId, AuditAction.LOGIN, ipAddress, userAgent);
 
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      expiresIn: this.getAccessTokenExpiry(),
+      expiresIn: this.getAccessTokenExpirySeconds(),
       user: {
         id: user.id,
         email: user.email,
@@ -97,7 +104,12 @@ export class AuthService {
 
     const tokenMatches = await argon2.verify(user.refreshTokenHash, rawRefreshToken);
     if (!tokenMatches) {
-      throw new UnauthorizedException('Invalid refresh token');
+      // Refresh token reuse detected – revoke everything (rotation violation)
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { refreshTokenHash: null },
+      });
+      throw new UnauthorizedException('Refresh token reuse detected. Please log in again.');
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role);
@@ -106,16 +118,32 @@ export class AuthService {
       data: { refreshTokenHash: await argon2.hash(tokens.refreshToken) },
     });
 
-    return tokens;
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: this.getAccessTokenExpirySeconds(),
+    };
   }
 
   // ─── Logout ───────────────────────────────────────────────
 
-  async logout(userId: string, ipAddress?: string, userAgent?: string) {
+  async logout(
+    userId: string,
+    jti?: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    // Blacklist current access token so it can't be reused before expiry
+    if (jti) {
+      const ttl = this.getAccessTokenExpirySeconds();
+      await this.blacklist.revoke(jti, ttl);
+    }
+
     await this.prisma.user.update({
       where: { id: userId },
       data: { refreshTokenHash: null },
     });
+
     await this.audit(userId, undefined, AuditAction.LOGOUT, ipAddress, userAgent);
     return { message: 'Logged out successfully' };
   }
@@ -134,7 +162,8 @@ export class AuthService {
 
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(
-      Date.now() + this.config.get<number>('auth.resetPasswordExpiry') * 60 * 1000,
+      Date.now() +
+        this.config.get<number>('auth.resetPasswordExpiry') * 60 * 1000,
     );
 
     await this.prisma.user.update({
@@ -145,8 +174,10 @@ export class AuthService {
       },
     });
 
-    // TODO: Integrate email provider (SendGrid, Resend, etc.)
-    this.logger.log(`Password reset token for ${user.email}: ${token}`);
+    // TODO: Inject and call an EmailService (Resend / SendGrid / SMTP)
+    this.logger.log(
+      `[DEV] Password reset token for ${user.email}: ${token} (expires ${expiresAt.toISOString()})`,
+    );
 
     return { message: 'If the email exists, a reset link has been sent' };
   }
@@ -165,14 +196,13 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired reset token');
     }
 
-    const hashedPassword = await argon2.hash(dto.password);
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
-        password: hashedPassword,
+        password: await argon2.hash(dto.password),
         resetPasswordToken: null,
         resetPasswordExpires: null,
-        refreshTokenHash: null,
+        refreshTokenHash: null, // Force re-login on all devices
       },
     });
 
@@ -190,13 +220,16 @@ export class AuthService {
     tenantId?: string,
     tenantRole?: string,
   ) {
-    const payload = { sub: userId, email, role, tenantId, tenantRole };
+    const jti = uuid(); // unique token ID for blacklist support
 
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwt.signAsync(payload, {
-        secret: this.config.get<string>('auth.jwtSecret'),
-        expiresIn: this.config.get<string>('auth.jwtExpiresIn'),
-      }),
+      this.jwt.signAsync(
+        { sub: userId, email, role, tenantId, tenantRole, jti },
+        {
+          secret: this.config.get<string>('auth.jwtSecret'),
+          expiresIn: this.config.get<string>('auth.jwtExpiresIn'),
+        },
+      ),
       this.jwt.signAsync(
         { sub: userId },
         {
@@ -209,12 +242,12 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  private getAccessTokenExpiry(): number {
-    const expiresIn = this.config.get<string>('auth.jwtExpiresIn');
-    if (expiresIn.endsWith('m')) return parseInt(expiresIn) * 60;
-    if (expiresIn.endsWith('h')) return parseInt(expiresIn) * 3600;
-    if (expiresIn.endsWith('d')) return parseInt(expiresIn) * 86400;
-    return 900;
+  getAccessTokenExpirySeconds(): number {
+    const raw = this.config.get<string>('auth.jwtExpiresIn');
+    if (raw.endsWith('m')) return parseInt(raw) * 60;
+    if (raw.endsWith('h')) return parseInt(raw) * 3600;
+    if (raw.endsWith('d')) return parseInt(raw) * 86400;
+    return 900; // 15 min default
   }
 
   private async audit(
@@ -224,15 +257,10 @@ export class AuthService {
     ipAddress?: string,
     userAgent?: string,
   ) {
-    await this.prisma.auditLog.create({
-      data: {
-        userId,
-        tenantId,
-        action,
-        resource: 'auth',
-        ipAddress,
-        userAgent,
-      },
-    });
+    await this.prisma.auditLog
+      .create({
+        data: { userId, tenantId, action, resource: 'auth', ipAddress, userAgent },
+      })
+      .catch(() => {});
   }
 }

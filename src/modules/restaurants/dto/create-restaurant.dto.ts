@@ -6,7 +6,6 @@ import {
   IsEnum,
   IsArray,
   IsBoolean,
-  IsUrl,
   Matches,
   MinLength,
   MaxLength,
@@ -15,14 +14,16 @@ import {
 import { Locale, MediaType, Plan } from '@prisma/client';
 
 export class CreateRestaurantDto {
-  @ApiProperty({ example: 'la-bella-pizza' })
+  /** If omitted the slug is auto-generated from name_en */
+  @ApiPropertyOptional({ example: 'la-bella-pizza' })
+  @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(60)
   @Matches(/^[a-z0-9-]+$/, {
     message: 'Slug may only contain lowercase letters, numbers and hyphens',
   })
-  slug: string;
+  slug?: string;
 
   @ApiProperty({ example: 'La Bella Pizza' })
   @IsString()
@@ -34,7 +35,7 @@ export class CreateRestaurantDto {
   @IsString()
   name_es?: string;
 
-  // Contact
+  // ─── Contact ──────────────────────────────────────────────
   @ApiPropertyOptional()
   @IsOptional()
   @IsEmail()
@@ -75,7 +76,7 @@ export class CreateRestaurantDto {
   @IsString()
   zipCode?: string;
 
-  // Branding
+  // ─── Branding ─────────────────────────────────────────────
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -114,7 +115,7 @@ export class CreateRestaurantDto {
   @IsString()
   fontFamily?: string;
 
-  // Hero
+  // ─── Hero ─────────────────────────────────────────────────
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -145,7 +146,7 @@ export class CreateRestaurantDto {
   @IsString()
   heroSubtitle_es?: string;
 
-  // SEO
+  // ─── SEO ──────────────────────────────────────────────────
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -166,13 +167,13 @@ export class CreateRestaurantDto {
   @IsString()
   metaDescription_es?: string;
 
-  // Theme
+  // ─── Theme ────────────────────────────────────────────────
   @ApiPropertyOptional()
   @IsOptional()
   @IsObject()
   themeSettings?: Record<string, any>;
 
-  // Locale
+  // ─── Locale ───────────────────────────────────────────────
   @ApiPropertyOptional({ enum: Locale, default: Locale.EN })
   @IsOptional()
   @IsEnum(Locale)
@@ -184,7 +185,7 @@ export class CreateRestaurantDto {
   @IsEnum(Locale, { each: true })
   supportedLocales?: Locale[];
 
-  // Subscription (Super/Agency admin only)
+  // ─── Subscription (admin only) ────────────────────────────
   @ApiPropertyOptional({ enum: Plan })
   @IsOptional()
   @IsEnum(Plan)

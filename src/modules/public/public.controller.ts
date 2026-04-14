@@ -20,7 +20,9 @@ export class PublicController {
   @Get(':slug')
   @ApiOperation({ summary: 'Get restaurant profile by slug' })
   @ApiParam({ name: 'slug', example: 'la-bella-pizza' })
-  @ApiQuery({ name: 'locale', required: false, enum: ['en', 'es'], example: 'en' })
+  @ApiQuery({ name: 'locale', required: false, enum: ['en', 'es'] })
+  @ApiResponse({ status: 200, description: 'Restaurant branding, contact, and theme data' })
+  @ApiResponse({ status: 404, description: 'Restaurant not found or inactive' })
   getRestaurant(
     @Param('slug') slug: string,
     @Query('locale') locale: 'en' | 'es' = 'en',
@@ -29,18 +31,36 @@ export class PublicController {
   }
 
   @Get(':slug/menu')
-  @ApiOperation({ summary: 'Get full menu tree (active menus → categories → items)' })
+  @ApiOperation({
+    summary:
+      'Full menu tree – active menus → categories → published + scheduled items',
+  })
   @ApiParam({ name: 'slug', example: 'la-bella-pizza' })
-  @ApiQuery({ name: 'locale', required: false, enum: ['en', 'es'], example: 'en' })
+  @ApiQuery({ name: 'locale', required: false, enum: ['en', 'es'] })
   @ApiResponse({
     status: 200,
-    description: 'Returns all active/scheduled menus with their categories and published items',
+    description:
+      'Only active, currently-scheduled menus/items are returned. ' +
+      'Price is serialized as a number.',
   })
   getMenuTree(
     @Param('slug') slug: string,
     @Query('locale') locale: 'en' | 'es' = 'en',
   ) {
     return this.publicService.getMenuTree(slug, locale);
+  }
+
+  @Get(':slug/items/featured')
+  @ApiOperation({ summary: 'List featured items for the restaurant' })
+  @ApiParam({ name: 'slug', example: 'la-bella-pizza' })
+  @ApiQuery({ name: 'locale', required: false, enum: ['en', 'es'] })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max items (default 12)' })
+  getFeatured(
+    @Param('slug') slug: string,
+    @Query('locale') locale: 'en' | 'es' = 'en',
+    @Query('limit') limit = 12,
+  ) {
+    return this.publicService.getFeatured(slug, locale, +limit);
   }
 
   @Get(':slug/items/:itemId')
@@ -57,9 +77,9 @@ export class PublicController {
   }
 
   @Get(':slug/search')
-  @ApiOperation({ summary: 'Search menu items by keyword' })
+  @ApiOperation({ summary: 'Full-text search across published menu items' })
   @ApiParam({ name: 'slug', example: 'la-bella-pizza' })
-  @ApiQuery({ name: 'q', required: true, description: 'Search query' })
+  @ApiQuery({ name: 'q', required: true, description: 'Search keyword' })
   @ApiQuery({ name: 'locale', required: false, enum: ['en', 'es'] })
   search(
     @Param('slug') slug: string,

@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { TokenBlacklistService } from '../token-blacklist.service';
 import { JwtPayload } from '../../../common/decorators/current-user.decorator';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   constructor(
     config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly blacklist: TokenBlacklistService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -18,7 +20,13 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
-  async validate(payload: JwtPayload) {
+  async validate(payload: JwtPayload & { jti?: string }) {
+    // Check blacklist (logout revocation)
+    if (payload.jti) {
+      const revoked = await this.blacklist.isRevoked(payload.jti);
+      if (revoked) throw new UnauthorizedException('Token has been revoked');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
       select: { id: true, email: true, role: true, isActive: true },
@@ -34,6 +42,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       role: user.role,
       tenantId: payload.tenantId,
       tenantRole: payload.tenantRole,
-    } satisfies JwtPayload;
+      jti: payload.jti,
+    } satisfies JwtPayload & { jti?: string };
   }
 }

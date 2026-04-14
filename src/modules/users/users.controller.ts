@@ -20,8 +20,9 @@ import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AssignTenantDto } from './dto/assign-tenant.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { SkipTenant } from '../../common/decorators/skip-tenant.decorator';
 import { Role } from '@prisma/client';
 
@@ -54,9 +55,29 @@ export class UsersController {
   }
 
   @Get('me')
-  @ApiOperation({ summary: 'Get current authenticated user profile' })
+  @ApiOperation({ summary: 'Get current user profile with tenant memberships' })
   getMe(@CurrentUser('sub') userId: string) {
     return this.usersService.findOne(userId);
+  }
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Update own profile (firstName, lastName, avatarUrl)' })
+  updateMe(@CurrentUser('sub') userId: string, @Body() dto: UpdateUserDto) {
+    return this.usersService.update(userId, dto);
+  }
+
+  @Post('me/change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Change own password (requires current password)' })
+  changePassword(
+    @CurrentUser('sub') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.usersService.changePassword(
+      userId,
+      dto.currentPassword,
+      dto.newPassword,
+    );
   }
 
   @Get(':id')
@@ -68,7 +89,7 @@ export class UsersController {
 
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN, Role.AGENCY_ADMIN)
-  @ApiOperation({ summary: 'Update user' })
+  @ApiOperation({ summary: 'Update any user (admin only)' })
   update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }

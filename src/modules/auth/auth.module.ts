@@ -5,14 +5,22 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
+import { TokenBlacklistService } from './token-blacklist.service';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({}), // secrets loaded per-sign via ConfigService
+    JwtModule.register({}), // secrets loaded dynamically per-sign via ConfigService
   ],
-  providers: [AuthService, JwtStrategy, JwtRefreshStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtRefreshStrategy,
+    JwtRefreshGuard,
+    TokenBlacklistService,
+  ],
   controllers: [AuthController],
-  exports: [AuthService],
+  exports: [AuthService, TokenBlacklistService],
 })
 export class AuthModule {}

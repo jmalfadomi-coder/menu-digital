@@ -68,6 +68,8 @@ async function bootstrap() {
       .addTag('Analytics', 'Analytics event intake')
       .addTag('Audit', 'Audit log access')
       .addTag('Public', 'Public read-only menu API')
+      .addTag('Admin', 'Platform & tenant dashboard statistics')
+      .addTag('Health', 'Service health check')
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
