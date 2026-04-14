@@ -3,10 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { getPrismaSkipTake, paginate } from '../../common/types/pagination.types';
+import { CacheInvalidationService } from '../../common/cache/cache-invalidation.service';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cacheInvalidation: CacheInvalidationService,
+  ) {}
 
   async create(tenantId: string, dto: CreateCategoryDto) {
     // Verify menu belongs to tenant
@@ -15,9 +19,11 @@ export class CategoriesService {
     });
     if (!menu) throw new BadRequestException('Menu not found in this tenant');
 
-    return this.prisma.category.create({
+    const category = await this.prisma.category.create({
       data: { ...dto, tenantId },
     });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return category;
   }
 
   async findAll(tenantId: string, menuId?: string, page = 1, limit = 50) {
@@ -54,12 +60,15 @@ export class CategoriesService {
 
   async update(id: string, tenantId: string, dto: UpdateCategoryDto) {
     await this.findOne(id, tenantId);
-    return this.prisma.category.update({ where: { id }, data: dto });
+    const category = await this.prisma.category.update({ where: { id }, data: dto });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return category;
   }
 
   async remove(id: string, tenantId: string) {
     await this.findOne(id, tenantId);
     await this.prisma.category.delete({ where: { id } });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
     return { message: 'Category deleted' };
   }
 
@@ -71,6 +80,7 @@ export class CategoriesService {
       }),
     );
     await Promise.all(updates);
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
     return { message: 'Sort order updated' };
   }
 }

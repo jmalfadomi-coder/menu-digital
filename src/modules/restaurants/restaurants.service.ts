@@ -11,10 +11,14 @@ import { getPrismaSkipTake, paginate } from '../../common/types/pagination.types
 import { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { Role, TenantRole } from '@prisma/client';
 import { uniqueSlug } from '../../common/utils/slug.util';
+import { CacheInvalidationService } from '../../common/cache/cache-invalidation.service';
 
 @Injectable()
 export class RestaurantsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cacheInvalidation: CacheInvalidationService,
+  ) {}
 
   // ─── Create ───────────────────────────────────────────────
 
@@ -108,10 +112,12 @@ export class RestaurantsService {
 
   async update(id: string, dto: UpdateRestaurantDto, user: JwtPayload) {
     const restaurant = await this.findOne(id, user);
-    return this.prisma.tenant.update({
+    const updated = await this.prisma.tenant.update({
       where: { id: restaurant.id },
       data: dto,
     });
+    await this.cacheInvalidation.invalidateBySlug(restaurant.slug);
+    return updated;
   }
 
   // ─── Delete ───────────────────────────────────────────────

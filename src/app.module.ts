@@ -23,6 +23,8 @@ import { AuditModule } from './modules/audit/audit.module';
 import { PublicModule } from './modules/public/public.module';
 import { HealthModule } from './modules/health/health.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { EmailModule } from './modules/email/email.module';
+import { CacheInvalidationModule } from './common/cache/cache-invalidation.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -50,8 +52,15 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => [
         {
+          name: 'default',
           ttl: config.get<number>('app.rateLimitTtl') * 1000,
           limit: config.get<number>('app.rateLimitMax'),
+        },
+        {
+          // Stricter throttle applied explicitly to login / forgot-password
+          name: 'auth',
+          ttl: 60_000, // 1 minute window
+          limit: config.get<number>('app.authRateLimitMax'),
         },
       ],
     }),
@@ -77,6 +86,12 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
     // ─── Database ─────────────────────────────────────────────
     PrismaModule,
+
+    // ─── Cache Invalidation ────────────────────────────────────
+    CacheInvalidationModule,
+
+    // ─── Email ─────────────────────────────────────────────────
+    EmailModule,
 
     // ─── Feature Modules ──────────────────────────────────────
     AuditModule,   // loaded early so AuditService is available globally

@@ -5,15 +5,19 @@ import { UpdateMenuDto } from './dto/update-menu.dto';
 import { getPrismaSkipTake, paginate } from '../../common/types/pagination.types';
 import { JwtPayload } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
+import { CacheInvalidationService } from '../../common/cache/cache-invalidation.service';
 
 @Injectable()
 export class MenusService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cacheInvalidation: CacheInvalidationService,
+  ) {}
 
   async create(tenantId: string, dto: CreateMenuDto) {
     const { schedules, ...menuData } = dto;
 
-    return this.prisma.menu.create({
+    const menu = await this.prisma.menu.create({
       data: {
         ...menuData,
         tenantId,
@@ -23,6 +27,9 @@ export class MenusService {
       },
       include: { schedules: true, _count: { select: { categories: true } } },
     });
+
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return menu;
   }
 
   async findAll(tenantId: string, page = 1, limit = 20) {
@@ -64,7 +71,7 @@ export class MenusService {
     await this.findOne(id, tenantId);
     const { schedules, ...menuData } = dto;
 
-    return this.prisma.menu.update({
+    const menu = await this.prisma.menu.update({
       where: { id },
       data: {
         ...menuData,
@@ -77,27 +84,35 @@ export class MenusService {
       },
       include: { schedules: true },
     });
+
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return menu;
   }
 
   async remove(id: string, tenantId: string) {
     await this.findOne(id, tenantId);
     await this.prisma.menu.delete({ where: { id } });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
     return { message: 'Menu deleted' };
   }
 
   async publish(id: string, tenantId: string) {
     await this.findOne(id, tenantId);
-    return this.prisma.menu.update({
+    const menu = await this.prisma.menu.update({
       where: { id },
       data: { isActive: true, publishedAt: new Date() },
     });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return menu;
   }
 
   async unpublish(id: string, tenantId: string) {
     await this.findOne(id, tenantId);
-    return this.prisma.menu.update({
+    const menu = await this.prisma.menu.update({
       where: { id },
       data: { isActive: false },
     });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return menu;
   }
 }

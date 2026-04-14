@@ -4,10 +4,14 @@ import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
 import { getPrismaSkipTake, paginate } from '../../common/types/pagination.types';
 import { ItemStatus } from '@prisma/client';
+import { CacheInvalidationService } from '../../common/cache/cache-invalidation.service';
 
 @Injectable()
 export class ItemsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cacheInvalidation: CacheInvalidationService,
+  ) {}
 
   async create(tenantId: string, dto: CreateItemDto) {
     const { schedules, ...itemData } = dto;
@@ -18,7 +22,7 @@ export class ItemsService {
     });
     if (!category) throw new BadRequestException('Category not found in this tenant');
 
-    return this.prisma.item.create({
+    const item = await this.prisma.item.create({
       data: {
         ...itemData,
         tenantId,
@@ -26,6 +30,8 @@ export class ItemsService {
       },
       include: { schedules: true },
     });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return item;
   }
 
   async findAll(
@@ -82,7 +88,7 @@ export class ItemsService {
     await this.findOne(id, tenantId);
     const { schedules, ...itemData } = dto;
 
-    return this.prisma.item.update({
+    const item = await this.prisma.item.update({
       where: { id },
       data: {
         ...itemData,
@@ -95,33 +101,42 @@ export class ItemsService {
       },
       include: { schedules: true },
     });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return item;
   }
 
   async remove(id: string, tenantId: string) {
     await this.findOne(id, tenantId);
     await this.prisma.item.delete({ where: { id } });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
     return { message: 'Item deleted' };
   }
 
   async publish(id: string, tenantId: string) {
     await this.findOne(id, tenantId);
-    return this.prisma.item.update({
+    const item = await this.prisma.item.update({
       where: { id },
       data: { status: ItemStatus.PUBLISHED, publishedAt: new Date() },
     });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return item;
   }
 
   async unpublish(id: string, tenantId: string) {
     await this.findOne(id, tenantId);
-    return this.prisma.item.update({
+    const item = await this.prisma.item.update({
       where: { id },
       data: { status: ItemStatus.DRAFT },
     });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return item;
   }
 
   async toggleSoldOut(id: string, tenantId: string, isSoldOut: boolean) {
     await this.findOne(id, tenantId);
-    return this.prisma.item.update({ where: { id }, data: { isSoldOut } });
+    const item = await this.prisma.item.update({ where: { id }, data: { isSoldOut } });
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
+    return item;
   }
 
   async reorder(tenantId: string, categoryId: string, orderedIds: string[]) {
@@ -132,6 +147,7 @@ export class ItemsService {
       }),
     );
     await Promise.all(updates);
+    await this.cacheInvalidation.invalidateByTenantId(tenantId);
     return { message: 'Sort order updated' };
   }
 }

@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   Logger,
+  Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -15,6 +16,7 @@ import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { AuditAction } from '@prisma/client';
+import { EMAIL_SERVICE, IEmailService } from '../email/email.interface';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +27,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly blacklist: TokenBlacklistService,
+    @Inject(EMAIL_SERVICE) private readonly emailService: IEmailService,
   ) {}
 
   // ─── Login ────────────────────────────────────────────────
@@ -174,10 +177,12 @@ export class AuthService {
       },
     });
 
-    // TODO: Inject and call an EmailService (Resend / SendGrid / SMTP)
-    this.logger.log(
-      `[DEV] Password reset token for ${user.email}: ${token} (expires ${expiresAt.toISOString()})`,
-    );
+    await this.emailService.sendPasswordReset({
+      to: user.email,
+      firstName: user.firstName ?? 'User',
+      resetToken: token,
+      expiresInMinutes: this.config.get<number>('auth.resetPasswordExpiry') ?? 60,
+    });
 
     return { message: 'If the email exists, a reset link has been sent' };
   }

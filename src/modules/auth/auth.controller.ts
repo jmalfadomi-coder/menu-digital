@@ -15,7 +15,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard, Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto, LoginResponseDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -33,6 +33,7 @@ export class AuthController {
 
   @Public()
   @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 0, limit: 0 }, auth: { ttl: 60_000, limit: 10 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login – receive JWT access + refresh tokens' })
@@ -70,6 +71,7 @@ export class AuthController {
 
   @Public()
   @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 0, limit: 0 }, auth: { ttl: 60_000, limit: 5 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset link (rate-limited)' })
@@ -79,6 +81,7 @@ export class AuthController {
 
   @Public()
   @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { ttl: 0, limit: 0 }, auth: { ttl: 60_000, limit: 5 } })
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password with a valid token' })
