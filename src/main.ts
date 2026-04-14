@@ -8,6 +8,7 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
+    rawBody: true, // required for Stripe webhook signature verification
   });
 
   const config = app.get(ConfigService);
@@ -87,7 +88,7 @@ async function bootstrap() {
   // ─── Shutdown hooks ───────────────────────────────────────
   app.enableShutdownHooks();
 
-  await app.listen(port);
+  await app.listen(port ?? 3000);
   logger.log(`Application running on http://localhost:${port} [${env}]`);
 }
 

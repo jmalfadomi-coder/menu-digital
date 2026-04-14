@@ -166,7 +166,7 @@ export class AuthService {
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(
       Date.now() +
-        this.config.get<number>('auth.resetPasswordExpiry') * 60 * 1000,
+        (this.config.get<number>('auth.resetPasswordExpiry') ?? 60) * 60 * 1000,
     );
 
     await this.prisma.user.update({
@@ -248,7 +248,7 @@ export class AuthService {
   }
 
   getAccessTokenExpirySeconds(): number {
-    const raw = this.config.get<string>('auth.jwtExpiresIn');
+    const raw = this.config.get<string>('auth.jwtExpiresIn') ?? '15m';
     if (raw.endsWith('m')) return parseInt(raw) * 60;
     if (raw.endsWith('h')) return parseInt(raw) * 3600;
     if (raw.endsWith('d')) return parseInt(raw) * 86400;

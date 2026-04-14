@@ -183,7 +183,7 @@ export class RestaurantsService {
   // ─── Helpers ──────────────────────────────────────────────
 
   private assertAccess(restaurant: any, user: JwtPayload) {
-    if ([Role.SUPER_ADMIN, Role.AGENCY_ADMIN].includes(user.role as Role)) return;
+    if (([Role.SUPER_ADMIN, Role.AGENCY_ADMIN] as Role[]).includes(user.role as Role)) return;
 
     const membership = restaurant.userTenants?.[0];
     if (!membership) {

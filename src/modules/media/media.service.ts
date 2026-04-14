@@ -34,14 +34,14 @@ export class MediaService {
   ) {
     const endpoint = config.get<string>('s3.endpoint');
     this.s3 = new S3Client({
-      region: config.get<string>('s3.region'),
+      region: config.get<string>('s3.region') ?? 'us-east-1',
       credentials: {
-        accessKeyId: config.get<string>('s3.accessKeyId'),
-        secretAccessKey: config.get<string>('s3.secretAccessKey'),
+        accessKeyId: config.get<string>('s3.accessKeyId') ?? '',
+        secretAccessKey: config.get<string>('s3.secretAccessKey') ?? '',
       },
       ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
     });
-    this.bucket = config.get<string>('s3.bucket');
+    this.bucket = config.get<string>('s3.bucket') ?? '';
     this.cdnUrl = config.get<string>('s3.cdnUrl');
   }
 
@@ -49,7 +49,7 @@ export class MediaService {
     tenantId: string,
     file: Express.Multer.File,
   ) {
-    const maxSizeMb = this.config.get<number>('s3.maxFileSizeMb');
+    const maxSizeMb = this.config.get<number>('s3.maxFileSizeMb') ?? 10;
     if (file.size > maxSizeMb * 1024 * 1024) {
       throw new BadRequestException(`File exceeds maximum size of ${maxSizeMb}MB`);
     }

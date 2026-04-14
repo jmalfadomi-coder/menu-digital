@@ -30,7 +30,7 @@ export class AuditController {
     @Query('limit') limit = 50,
   ) {
     // Super/Agency admin can query without tenant scope
-    const scopedTenantId = [Role.SUPER_ADMIN, Role.AGENCY_ADMIN].includes(role as Role)
+    const scopedTenantId = ([Role.SUPER_ADMIN, Role.AGENCY_ADMIN] as Role[]).includes(role as Role)
       ? undefined
       : tenantId;
 

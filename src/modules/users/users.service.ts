@@ -100,7 +100,7 @@ export class UsersService {
 
   async assignTenant(userId: string, dto: AssignTenantDto, requestingRole: Role) {
     // Only super admin / agency admin can assign users to tenants
-    if (![Role.SUPER_ADMIN, Role.AGENCY_ADMIN].includes(requestingRole)) {
+    if (!([Role.SUPER_ADMIN, Role.AGENCY_ADMIN] as Role[]).includes(requestingRole)) {
       throw new ForbiddenException('Insufficient permissions');
     }
 

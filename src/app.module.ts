@@ -8,6 +8,7 @@ import appConfig from './config/app.config';
 import authConfig from './config/auth.config';
 import redisConfig from './config/redis.config';
 import s3Config from './config/s3.config';
+import stripeConfig from './config/stripe.config';
 import { envValidationSchema } from './config/env.validation';
 
 import { PrismaModule } from './prisma/prisma.module';
@@ -24,6 +25,7 @@ import { PublicModule } from './modules/public/public.module';
 import { HealthModule } from './modules/health/health.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { EmailModule } from './modules/email/email.module';
+import { StripeModule } from './modules/stripe/stripe.module';
 import { CacheInvalidationModule } from './common/cache/cache-invalidation.module';
 
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -40,7 +42,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     // ─── Config ───────────────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [appConfig, authConfig, redisConfig, s3Config],
+      load: [appConfig, authConfig, redisConfig, s3Config, stripeConfig],
       envFilePath: ['.env', '.env.local'],
       validationSchema: envValidationSchema,
       validationOptions: { abortEarly: false },
@@ -53,14 +55,14 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
       useFactory: (config: ConfigService) => [
         {
           name: 'default',
-          ttl: config.get<number>('app.rateLimitTtl') * 1000,
-          limit: config.get<number>('app.rateLimitMax'),
+          ttl: (config.get<number>('app.rateLimitTtl') ?? 60) * 1000,
+          limit: config.get<number>('app.rateLimitMax') ?? 100,
         },
         {
           // Stricter throttle applied explicitly to login / forgot-password
           name: 'auth',
           ttl: 60_000, // 1 minute window
-          limit: config.get<number>('app.authRateLimitMax'),
+          limit: config.get<number>('app.authRateLimitMax') ?? 10,
         },
       ],
     }),
@@ -79,7 +81,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
             password: config.get<string>('redis.password') || undefined,
             db: config.get<number>('redis.db'),
           }),
-          ttl: config.get<number>('redis.ttl') * 1000, // ms for cache-manager v5
+          ttl: (config.get<number>('redis.ttl') ?? 300) * 1000, // ms for cache-manager v5
         };
       },
     }),
@@ -106,6 +108,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     PublicModule,
     HealthModule,
     AdminModule,
+    StripeModule,
   ],
 
   providers: [

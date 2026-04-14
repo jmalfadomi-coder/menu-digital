@@ -35,4 +35,13 @@ export const envValidationSchema = Joi.object({
   S3_BUCKET: Joi.string().required(),
   S3_CDN_URL: Joi.string().uri().allow('').optional(),
   S3_MAX_FILE_SIZE_MB: Joi.number().default(10),
+
+  // Stripe
+  STRIPE_SECRET_KEY: Joi.string().allow('').optional(),
+  STRIPE_WEBHOOK_SECRET: Joi.string().allow('').optional(),
+  STRIPE_PRICE_STARTER: Joi.string().allow('').optional(),
+  STRIPE_PRICE_PRO: Joi.string().allow('').optional(),
+  STRIPE_PRICE_ENTERPRISE: Joi.string().allow('').optional(),
+  STRIPE_SUCCESS_URL: Joi.string().uri().allow('').optional(),
+  STRIPE_CANCEL_URL: Joi.string().uri().allow('').optional(),
 });

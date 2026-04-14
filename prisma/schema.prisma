@@ -116,9 +116,11 @@ model Tenant {
   supportedLocales Locale[]  @default([EN])
 
   // Subscription
-  plan      Plan    @default(FREE)
-  isActive  Boolean @default(true)
-  isVerified Boolean @default(false)
+  plan                 Plan    @default(FREE)
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  isActive             Boolean @default(true)
+  isVerified           Boolean @default(false)
 
   // Timestamps
   createdAt DateTime @default(now())
