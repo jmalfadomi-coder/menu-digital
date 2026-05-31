@@ -102,7 +102,9 @@ describe('PublicService', () => {
   let service: PublicService;
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    mockCache.get.mockResolvedValue(undefined);
+    mockCache.set.mockResolvedValue(undefined);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ItemsService } from './items.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CacheInvalidationService } from '../../common/cache/cache-invalidation.service';
 import { ItemStatus } from '@prisma/client';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -42,6 +43,10 @@ const mockPrisma = {
   },
 };
 
+const mockCacheInvalidation = {
+  invalidateByTenantId: jest.fn().mockResolvedValue(undefined),
+};
+
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('ItemsService', () => {
@@ -54,6 +59,7 @@ describe('ItemsService', () => {
       providers: [
         ItemsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: CacheInvalidationService, useValue: mockCacheInvalidation },
       ],
     }).compile();
 
